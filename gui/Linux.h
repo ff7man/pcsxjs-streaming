@@ -37,8 +37,9 @@
 //#define PATCHES_DIR "/.pcsx/patches/"
 
 extern int StatesC;
-char cfgfile[MAXPATHLEN];	/* ADB Comment this out - make a local var, or at least use gchar funcs */
-char cfgfile_basename[MAXPATHLEN];	/* ADB Comment this out - make a local var, or at least use gchar funcs */
+/* Shared configuration buffers; define them once in Config.c. */
+extern char cfgfile[MAXPATHLEN];
+extern char cfgfile_basename[MAXPATHLEN];
 
 int LoadConfig();
 void SaveConfig();

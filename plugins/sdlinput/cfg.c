@@ -34,7 +34,8 @@ void SetDefaultConfig() {
 
 	// Pad1 keyboard
 	g.cfg.PadDef[0].KeyDef[DKEY_SELECT].Key = SDLK_c;
-	g.cfg.PadDef[0].KeyDef[DKEY_START].Key = SDLK_v;
+	/* Enter is the conventional keyboard equivalent of the PlayStation Start button. */
+	g.cfg.PadDef[0].KeyDef[DKEY_START].Key = SDLK_RETURN;
 	g.cfg.PadDef[0].KeyDef[DKEY_UP].Key = SDLK_UP;
 	g.cfg.PadDef[0].KeyDef[DKEY_RIGHT].Key = SDLK_RIGHT;
 	g.cfg.PadDef[0].KeyDef[DKEY_DOWN].Key = SDLK_DOWN;

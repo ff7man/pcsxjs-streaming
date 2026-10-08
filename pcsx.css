@@ -258,6 +258,89 @@ canvas.emscripten
     font-size: 4vh;
   }
 
+/* eNGE-inspired responsive shell for desktop, tablets, and phones. */
+html, body { min-height: 100%; }
+body { background: #202020; color: #eee; font-family: system-ui, sans-serif; }
+body.app-shell { overflow-x: hidden; }
+body.app-shell { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.app-header { display: flex; align-items: center; justify-content: flex-start; gap: .75rem; width: 100%; max-width: none; box-sizing: border-box; margin: .75rem 0; padding: 0 .75rem; }
+.app-header h1 { margin: 0; font-size: clamp(1rem, 3vw, 1.6rem); }
+.app-actions { display: flex; gap: .5rem; margin-left: auto; }
+.icon-button { width: 3.5rem; height: 3.5rem; border: 2px solid #666; border-radius: .55rem; background: #292929 center / 2rem 2rem no-repeat; color: transparent; cursor: pointer; }
+.icon-button:hover, .icon-button:focus-visible { background-color: #3a3a3a; }
+#menu-button { background-image: url('images/menu.svg'); }
+#fullscreen { background-image: url('images/fullscreen.svg'); }
+#cloud-button { background-image: url('images/cloud.svg'); }
+#help-button { background-image: url('images/help.svg'); }
+.file-upload-button { display: inline-block; box-sizing: border-box; background-image: url('images/upload.svg'); }
+#iso_opener:disabled + .file-upload-button { opacity: .45; cursor: not-allowed; }
+.app-main { width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; align-items: center; justify-content: center; background: #000; }
+.main { width: min(100%, calc((100dvh - 5rem) * 4 / 3)); max-width: 100%; max-height: 100%; height: auto; aspect-ratio: 4 / 3; }
+canvas.emscripten { width: 100%; height: 100%; object-fit: contain; }
+.stream-controls { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .75rem 0; }
+.stream-controls input { min-width: min(100%, 28rem); flex: 1; min-height: 2.5rem; padding: .4rem .6rem; border: 1px solid #666; border-radius: .35rem; background: #2b2b2b; color: #eee; }
+.app-button { box-sizing: border-box; min-height: 2.5rem; padding: .45rem .75rem; border: 1px solid #777; border-radius: .35rem; background: #333; color: #eee; cursor: pointer; font: inherit; font-size: 1rem; line-height: 1.2; text-decoration: none; }
+.app-button:disabled { background: #1b1b1b; color: #777; border-color: #444; cursor: not-allowed; }
+.infobox { width: auto; height: auto; float: none; margin: .75rem 0; padding: .75rem; background: #171717; border: 1px solid #333; border-radius: .4rem; }
+.infobox pre { overflow-x: auto; white-space: pre-wrap; color: #aaa; }
+#control-menu, #network-menu, #help-menu { display: none; position: fixed; inset: 0; z-index: 20; align-items: flex-start; justify-content: flex-end; box-sizing: border-box; overflow: auto; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); background: #0008; -webkit-overflow-scrolling: touch; }
+#control-menu.open, #network-menu.open, #help-menu.open { display: flex; }
+#control-menu.open, #network-menu.open, #help-menu.open, #control-menu.open .menu-panel, #network-menu.open .menu-panel, #help-menu.open .menu-panel { pointer-events: auto; }
+.menu-panel { width: min(24rem, 100%); max-height: 100%; box-sizing: border-box; overflow: auto; padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); background: #242424; border: 1px solid #666; border-radius: .6rem; box-shadow: 0 1rem 3rem #000; -webkit-overflow-scrolling: touch; }
+.help-panel { width: min(32rem, 100%); }
+.menu-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: .75rem; }
+.menu-heading h2 { margin: 0; }
+.help-content h3 { margin: 1rem 0 .25rem; color: #ddd; }
+.help-content h3:first-child { margin-top: 0; }
+.help-content p { margin: .35rem 0; color: #bbb; line-height: 1.45; }
+.help-list { margin: .35rem 0; padding-left: 1.25rem; color: #bbb; line-height: 1.45; }
+.help-content a { color: #8fc7ff; }
+.menu-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.menu-list .app-button { display: block; box-sizing: border-box; width: 100%; text-align: left; }
+.menu-section { margin-top: .5rem; color: #aaa; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; }
+.cloud-server-config { margin: .75rem 0 1rem; padding: .75rem; border: 1px solid #444; border-radius: .4rem; background: #1b1b1b; }
+.cloud-server-config label { display: block; margin-bottom: .35rem; color: #ccc; font-size: .9rem; }
+.cloud-server-config input { display: block; position: relative; z-index: 1; box-sizing: border-box; width: 100%; min-height: 2.4rem; padding: .4rem .55rem; border: 1px solid #666; border-radius: .35rem; background: #2b2b2b; color: #eee; font: inherit; user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; touch-action: manipulation; pointer-events: auto !important; }
+.cloud-server-actions { display: flex; gap: .5rem; margin-top: .5rem; }
+.cloud-server-config small { display: block; margin-top: .5rem; color: #999; line-height: 1.35; }
+.cloud-server-config code { color: #ccc; }
+#touch-controls { display: none; }
+@media (pointer: coarse), (max-width: 700px) {
+  .app-shell, .app-shell button, .app-shell label, .app-shell h1, .app-shell h2, .app-shell h3 { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .app-shell button, .app-shell label { -webkit-tap-highlight-color: transparent; }
+  .menu-panel { touch-action: pan-y; }
+  .app-button, .icon-button, .file-upload-button { touch-action: manipulation; }
+  #touch-controls { display: block; position: fixed; inset: 0; z-index: 10; pointer-events: none; touch-action: none; }
+  .touch-button, .touch-stick { pointer-events: auto; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .touch-button { position: absolute; width: 3.6rem; height: 3.6rem; border: 2px solid #888; border-radius: 50%; background: #222b; color: #eee; font: inherit; font-weight: 600; touch-action: none; }
+  .touch-button.is-pressed { background: #777d; }
+  .touch-face { position: absolute; right: 1rem; bottom: 1.5rem; width: 11rem; height: 11rem; }
+  .touch-face .touch-button { position: absolute; }
+  .touch-face .triangle { top: 0; left: 50%; transform: translateX(-50%); }
+  .touch-face .circle { top: 50%; right: 0; transform: translateY(-50%); }
+  .touch-face .square { top: 50%; left: 0; transform: translateY(-50%); }
+  .touch-face .cross { bottom: 0; left: 50%; transform: translateX(-50%); }
+  .touch-menu { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; gap: .35rem; }
+  .touch-menu .touch-button, .touch-shoulder-pair .touch-button { position: relative; }
+  .touch-shoulders { position: absolute; top: calc(5rem + env(safe-area-inset-top)); left: 1rem; right: 1rem; display: flex; justify-content: space-between; }
+  .touch-shoulder-pair { display: flex; gap: .35rem; }
+  .touch-stick { position: absolute; left: 1rem; bottom: 1.5rem; width: 8.5rem; height: 8.5rem; border: 2px solid #888; border-radius: 50%; background: #2228; }
+  .touch-stick-knob { position: absolute; left: 50%; top: 50%; width: 3.5rem; height: 3.5rem; margin: -1.75rem; border: 1px solid #aaa; border-radius: 50%; background: #999b; }
+  .app-header { margin-top: .5rem; }
+  .app-actions { gap: .25rem; }
+  .icon-button { width: 3rem; height: 3rem; background-size: 1.7rem 1.7rem; }
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .touch-stick { left: 2rem; bottom: 5rem; }
+  .touch-face { right: 2rem; bottom: 5rem; transform: scale(.9); transform-origin: bottom right; }
+  .touch-menu { bottom: 1rem; }
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  .touch-face { right: 1.5rem; bottom: 1rem; transform: scale(.82); transform-origin: bottom right; }
+  .touch-stick { left: 1.5rem; bottom: 1rem; transform: scale(.82); transform-origin: bottom left; }
+  .touch-menu { left: auto; right: 12rem; bottom: 1rem; transform: none; }
+}
+
 .main:-moz-full-screen .control div{
     font-size: 4vh;
   }

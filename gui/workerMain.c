@@ -31,6 +31,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include "../libpcsxcore/sio.h"
+#include "../libpcsxcore/misc.h"
 
 #include "Linux.h"
 static void CreateMemcard(char *filename, char *conf_mcd)
@@ -51,6 +52,30 @@ static void CreateMemcard(char *filename, char *conf_mcd)
     }
 }
 void execI();
+
+/* Browser-facing bridges for the existing PCSX save-state and card formats.
+ * The UI stores these byte arrays in browser storage; the emulation core still
+ * owns the actual card/state data and remains responsible for validation. */
+char *pcsx_get_mcd_ptr(int card)
+{
+    return card == 2 ? Mcd2Data : Mcd1Data;
+}
+
+int pcsx_save_state_default(void)
+{
+	return SaveState("/home/web_user/.pcsx/pcsxjs-state.gz");
+}
+
+int pcsx_load_state_default(void)
+{
+	return LoadState("/home/web_user/.pcsx/pcsxjs-state.gz");
+}
+
+int pcsx_close(void)
+{
+	SysClose();
+	return 0;
+}
 #include <emscripten.h>
 extern long updated_display;
 int DoGPUUpdate = 0;
@@ -75,10 +100,9 @@ void one_iter()
     //setIrq( 0x01 );
     psxHu32ref(0x1070) |= 1;
     GPUupdateLace0();
-    EM_ASM_({
-
-        setTimeout("pcsx_mainloop()", $0);
-    },
+	EM_ASM_({
+		if (Module.emuRunning) setTimeout("pcsx_mainloop()", $0);
+		},
             updated_display / 1000);
 }
 

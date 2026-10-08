@@ -487,7 +487,6 @@ static const char PcsxHeader[32] = "STv4 PCSX v" PACKAGE_VERSION;
 // If you make changes to the savestate version, please increment the value below.
 static const u32 SaveVersion = 0x8b410004;
 
-#if 0 // remove 
 int SaveState(const char *file) {
 	gzFile f;
 	GPUFreeze_t *gpufP;
@@ -504,7 +503,9 @@ int SaveState(const char *file) {
 
 	pMem = (unsigned char *)malloc(128 * 96 * 3);
 	if (pMem == NULL) return -1;
-	GPU_getScreenPic(pMem);
+	/* The browser video plugin does not expose a screenshot return value; the
+	 * thumbnail is skipped because LoadState only advances past these bytes. */
+	memset(pMem, 0, 128 * 96 * 3);
 	gzwrite(f, pMem, 128 * 96 * 3);
 	free(pMem);
 
@@ -524,7 +525,7 @@ int SaveState(const char *file) {
 	free(gpufP);
 
 	// spu
-	spufP = (SPUFreeze_t *) malloc(16);
+	spufP = (SPUFreeze_t *) malloc(sizeof(SPUFreeze_t));
 	SPU_freeze(2, spufP);
 	Size = spufP->Size; gzwrite(f, &Size, 4);
 	free(spufP);
@@ -623,6 +624,8 @@ int CheckState(const char *file) {
 
 // NET Function Helpers
 
+#if 0 /* Network state transfer is not part of the browser build. */
+
 int SendPcsxInfo() {
 	if (NET_recvData == NULL || NET_sendData == NULL)
 		return 0;
@@ -669,6 +672,7 @@ int RecvPcsxInfo() {
 
 	return 0;
 }
+
 #endif
 // remove the leading and trailing spaces in a string
 void trim(char *str) {

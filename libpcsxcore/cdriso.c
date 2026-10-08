@@ -48,6 +48,66 @@ static boolean subChanRaw = FALSE;
 static unsigned char cdbuffer[DATA_SIZE];
 static unsigned char subbuffer[SUB_FRAMESIZE];
 
+#ifdef __EMSCRIPTEN__
+/*
+ * The original backend uses fseek/fread on a complete image in Emscripten's
+ * virtual filesystem. This bridge keeps only aligned HTTP range chunks in
+ * JavaScript and copies one ready sector into the WASM CD buffer.
+ */
+EM_JS(int, psx_stream_set_url, (const char *url), {
+	const source = UTF8ToString(url);
+	Module.psxRangeStream = {
+		url: source,
+		/* Keep startup ranges modest; some simple HTTP servers reject very
+		 * large ranges even though they support normal 206 responses. */
+		chunkSize: 2352 * 2048,
+		maxChunks: 3,
+		chunks: new Map(),
+		pending: new Map(),
+		errors: new Map()
+	};
+	return 0;
+});
+
+EM_JS(int, psx_stream_read_sector, (int lba, int destination), {
+	const stream = Module.psxRangeStream;
+	if (!stream || !stream.url || lba < 0) return -1;
+
+	const byteOffset = lba * 2352;
+	const chunkIndex = Math.floor(byteOffset / stream.chunkSize);
+	const chunkStart = chunkIndex * stream.chunkSize;
+	const chunk = stream.chunks.get(chunkIndex);
+	if (chunk) {
+		const offset = byteOffset - chunkStart + 12;
+		if (offset + 2340 > chunk.length) return -1;
+		HEAPU8.set(chunk.subarray(offset, offset + 2340), destination);
+		return 1;
+	}
+
+	if (stream.errors.has(chunkIndex)) return -1;
+	if (!stream.pending.has(chunkIndex)) {
+		const end = chunkStart + stream.chunkSize - 1;
+		const request = fetch(stream.url, {
+			headers: { Range: `bytes=${chunkStart}-${end}` }
+		}).then(async response => {
+			if (response.status !== 206) {
+				throw new Error(`stream request returned HTTP ${response.status}; byte ranges are required`);
+			}
+			const data = new Uint8Array(await response.arrayBuffer());
+			stream.chunks.set(chunkIndex, data);
+			while (stream.chunks.size > stream.maxChunks) {
+				stream.chunks.delete(stream.chunks.keys().next().value);
+			}
+		}).catch(error => {
+			stream.errors.set(chunkIndex, error);
+			if (Module.printErr) Module.printErr(`[CDR stream] ${error.message}`);
+		}).finally(() => stream.pending.delete(chunkIndex));
+		stream.pending.set(chunkIndex, request);
+	}
+	return 0;
+});
+#endif
+
 static unsigned char sndbuffer[CD_FRAMESIZE_RAW * 10];
 
 #define CDDA_FRAMETIME			(1000 * (sizeof(sndbuffer) / CD_FRAMESIZE_RAW) / 75)
@@ -64,6 +124,10 @@ static unsigned int initial_offset = 0;
 static volatile boolean playing = FALSE;
 static boolean cddaBigEndian = FALSE;
 static volatile unsigned int cddaCurOffset = 0;
+static int streamMode = 0;
+/* cdrIsoSetStreamURL is called before LoadPlugins(), which invokes
+ * cdrIsoInit(). Keep the request alive across that normal plugin setup. */
+static int streamRequested = 0;
 
 char* CALLBACK CDR__getDriveLetter(void);
 long CALLBACK CDR__configure(void);
@@ -501,6 +565,7 @@ static int parsetoc(const char *isofile) {
 // the necessary data is put into the ti (trackinformation)-array
 static int parsecue(const char *isofile) {
 	char			cuename[MAXPATHLEN];
+	char			datafile[MAXPATHLEN] = "";
 	FILE			*fi;
 	char			*token;
 	char			time[20];
@@ -541,13 +606,42 @@ static int parsecue(const char *isofile) {
 
 	while (fgets(linebuf, sizeof(linebuf), fi) != NULL) {
 		strncpy(dummy, linebuf, sizeof(linebuf));
+		dummy[sizeof(dummy) - 1] = '\0';
 		token = strtok(dummy, " ");
 
 		if (token == NULL) {
 			continue;
 		}
 
-		if (!strcmp(token, "TRACK")){
+		if (!strcmp(token, "FILE")) {
+			/* When the user selects a CUE directly, cdHandle initially points at
+			 * the text file. Resolve its first referenced image relative to the
+			 * CUE directory and switch cdHandle to the actual BIN. */
+			char *name = linebuf + 4;
+			while (*name == ' ' || *name == '\t') name++;
+			if (*name == '"') {
+				name++;
+				char *end = strchr(name, '"');
+				if (end) *end = '\0';
+			} else {
+				char *end = name;
+				while (*end && *end != ' ' && *end != '\t' && *end != '\r' && *end != '\n') end++;
+				*end = '\0';
+			}
+			if (strstr(isofile, ".cue") == isofile + strlen(isofile) - 4 && !datafile[0]) {
+				const char *slash = strrchr(isofile, '/');
+				if (slash) {
+					size_t prefix = (size_t)(slash - isofile + 1);
+					if (prefix + strlen(name) < sizeof(datafile)) {
+						memcpy(datafile, isofile, prefix);
+						strcpy(datafile + prefix, name);
+					}
+				} else if (strlen(name) < sizeof(datafile)) {
+				strcpy(datafile, name);
+				}
+			}
+		}
+		else if (!strcmp(token, "TRACK")){
 			numtracks++;
 
 			if (strstr(linebuf, "AUDIO") != NULL) {
@@ -579,6 +673,13 @@ static int parsecue(const char *isofile) {
 	}
 
 	fclose(fi);
+
+	if (datafile[0]) {
+		FILE *image = fopen(datafile, "rb");
+		if (image == NULL) return -1;
+		fclose(cdHandle);
+		cdHandle = image;
+	}
 
 	// Fill out the last track's end based on size
 	if (numtracks >= 1) {
@@ -807,6 +908,17 @@ static long CALLBACK ISOopen(void) {
 		return 0; // it's already open
 	}
 
+#ifdef __EMSCRIPTEN__
+	if (streamMode) {
+		/* A non-null sentinel keeps the normal plugin lifecycle intact. */
+		cdHandle = (FILE *)1;
+		numtracks = 1;
+		memset(&ti[1], 0, sizeof(ti[1]));
+		ti[1].type = DATA;
+		return 0;
+	}
+#endif
+
 	cdHandle = fopen(GetIsoFile(), "rb");
 	if (cdHandle == NULL) {
 		return -1;
@@ -844,6 +956,9 @@ static long CALLBACK ISOopen(void) {
 
 static long CALLBACK ISOclose(void) {
 	if (cdHandle != NULL) {
+	#ifdef __EMSCRIPTEN__
+		if (!streamMode)
+	#endif
 		fclose(cdHandle);
 		cdHandle = NULL;
 	}
@@ -912,6 +1027,14 @@ static void DecodeRawSubData(void) {
 // time: byte 0 - minute; byte 1 - second; byte 2 - frame
 // uses bcd format
 static long CALLBACK ISOreadTrack(unsigned char *time) {
+#ifdef __EMSCRIPTEN__
+	if (streamMode) {
+		const int lba = MSF2SECT(btoi(time[0]), btoi(time[1]), btoi(time[2]));
+		const int result = psx_stream_read_sector(lba, (int)(uintptr_t)cdbuffer);
+		if (result > 0) return 0;
+		return result == 0 ? CDR_READ_PENDING : -1;
+	}
+#endif
 	if (cdHandle == NULL) {
 		return -1;
 	}
@@ -1012,6 +1135,18 @@ void cdrIsoInit(void) {
 	CDR_setfilename = CDR__setfilename;
 
 	numtracks = 0;
+	streamMode = streamRequested;
+}
+
+int cdrIsoSetStreamURL(const char *url) {
+#ifdef __EMSCRIPTEN__
+	streamMode = 1;
+	streamRequested = 1;
+	return psx_stream_set_url(url);
+#else
+	(void)url;
+	return -1;
+#endif
 }
 
 int cdrIsoActive(void) {

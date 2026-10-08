@@ -22,6 +22,7 @@
 */
 
 #include "cdrom.h"
+#include "cdriso.h"
 #include "ppf.h"
 
 cdrStruct cdr;
@@ -130,7 +131,7 @@ static struct SubQ *subq;
 	cdr.ResultReady = 1; \
 }
 
-static void ReadTrack() {
+static long ReadTrack() {
 	cdr.Prev[0] = itob(cdr.SetSector[0]);
 	cdr.Prev[1] = itob(cdr.SetSector[1]);
 	cdr.Prev[2] = itob(cdr.SetSector[2]);
@@ -139,6 +140,7 @@ static void ReadTrack() {
 	CDR_LOG("ReadTrack() Log: KEY *** %x:%x:%x\n", cdr.Prev[0], cdr.Prev[1], cdr.Prev[2]);
 #endif
 	cdr.RErr = CDR_readTrack(cdr.Prev);
+	return cdr.RErr;
 }
 
 // cdr.Stat:
@@ -615,6 +617,19 @@ void cdrReadInterrupt() {
     cdr.Result[0] = cdr.StatP;
 
 	ReadTrack();
+
+	if (cdr.RErr == CDR_READ_PENDING) {
+		/*
+		 * A streamed sector is being fetched by the browser. Do not expose a
+		 * transient range miss as a disc error; retry this CD-ROM interrupt
+		 * after one emulated sector interval.
+		 */
+		cdr.ResultReady = 0;
+		cdr.ResultC = 0;
+		cdr.StatP &= ~0x22;
+		CDREAD_INT(cdReadTime);
+		return;
+	}
 
 	buf = CDR_getBuffer();
 	if (buf == NULL)

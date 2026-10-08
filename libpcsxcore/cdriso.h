@@ -21,12 +21,20 @@
 #ifndef CDRISO_H
 #define CDRISO_H
 
+/*
+ * A streamed sector may not be available when the emulated CD-ROM asks for
+ * it. The CD-ROM state machine retries this result instead of reporting a
+ * disc error to the guest program.
+ */
+#define CDR_READ_PENDING (-2)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void cdrIsoInit(void);
 int cdrIsoActive(void);
+int cdrIsoSetStreamURL(const char *url);
 
 #ifdef __cplusplus
 }
