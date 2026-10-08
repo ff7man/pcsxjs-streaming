@@ -5,6 +5,8 @@ PCSXjs-stream is a browser-based PlayStation emulator based on
 loading, a responsive controller UI, cloud game catalogs, save-state tools, and
 memory-card tools.
 
+Live demo: [PCSXjs-stream on GitHub Pages](https://ff7man.github.io/pcsxjs-streaming/)
+
 ## Why this was made
 
 Some browsers have a strict memory limit. In particular, Microsoft Edge on Xbox
