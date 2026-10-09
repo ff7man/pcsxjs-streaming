@@ -5,7 +5,13 @@ var do_iter = true;
 var Module = {
   /* Xbox Edge owns the long-press Start/Menu escape gesture. Do not let the
      Emscripten SDL keyboard bridge install document-wide event handlers there. */
-  doNotCaptureKeyboard: /xbox/i.test(((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' + (navigator.userAgent || '')),
+  doNotCaptureKeyboard: (function () {
+    var platformText = ((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' +
+      (navigator.platform || '') + ' ' + (navigator.userAgent || '');
+    if (/xbox/i.test(platformText)) return true;
+    var mobileLike = /Android|iPhone|iPad|iPod|Windows Phone/i.test(platformText);
+    return Number(navigator.maxTouchPoints || 0) >= 4 && !mobileLike && !!navigator.getGamepads;
+  }()),
   preRun: [],
   postRun: [],
   print: (function () {
@@ -32,6 +38,30 @@ var Module = {
 
   goFullscreen: function () {
     var canvas = Module['canvas'];
+    if (xbox_browser) {
+      var nativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+      if (nativeFullscreen) {
+        var nativeExit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (nativeExit) nativeExit.call(document);
+        return;
+      }
+      var nativeRequest = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+      if (nativeRequest) {
+        try {
+          var requestResult = nativeRequest.call(document.documentElement);
+          if (requestResult && requestResult.then) {
+            requestResult.then(update_fullscreen_viewport).catch(toggle_xbox_pseudo_fullscreen);
+          } else {
+            update_fullscreen_viewport();
+          }
+        } catch (error) {
+          toggle_xbox_pseudo_fullscreen();
+        }
+      } else {
+        toggle_xbox_pseudo_fullscreen();
+      }
+      return;
+    }
     if (Browser.isFullscreen) return canvas.exitFullscreen();
     Browser.lockPointer = false;
     Browser.resizeCanvas = false;
@@ -164,10 +194,48 @@ var virtual_pad_mask = 0xffff;
 var virtual_stick_pointer = null;
 var browser_gamepad_indices = [null, null];
 var browser_gamepad_active = false;
-var gamepad_start_since = 0;
-var gamepad_exit_latched = false;
-var xbox_browser = /xbox/i.test(((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' + (navigator.userAgent || ''));
+var keyboard_proxy_mask = 0xffff;
+var xbox_browser = (function () {
+  var platformText = ((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' +
+    (navigator.platform || '') + ' ' + (navigator.userAgent || '');
+  if (/xbox/i.test(platformText)) return true;
+  var mobileLike = /Android|iPhone|iPad|iPod|Windows Phone/i.test(platformText);
+  return Number(navigator.maxTouchPoints || 0) >= 4 && !mobileLike && !!navigator.getGamepads;
+}());
 var bios_state = 'unknown';
+
+var keyboard_proxy_bits = {
+  Enter: 3, c: 0, ArrowUp: 4, ArrowRight: 5, ArrowDown: 6, ArrowLeft: 7,
+  e: 8, t: 9, w: 10, r: 11, d: 12, x: 13, z: 14, s: 15
+};
+function update_keyboard_proxy(event, pressed) {
+  var bit = keyboard_proxy_bits[event.key];
+  if (bit === undefined) return;
+  if (pressed) keyboard_proxy_mask &= ~(1 << bit);
+  else keyboard_proxy_mask |= 1 << bit;
+}
+window.addEventListener('keydown', function (event) { update_keyboard_proxy(event, true); });
+window.addEventListener('keyup', function (event) { update_keyboard_proxy(event, false); });
+
+function toggle_xbox_pseudo_fullscreen() {
+  document.documentElement.classList.toggle('xbox-pseudo-fullscreen');
+  update_fullscreen_viewport();
+}
+
+function update_fullscreen_viewport() {
+  var viewport = window.visualViewport;
+  var width = viewport ? viewport.width : window.innerWidth;
+  var height = viewport ? viewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--fullscreen-width', width + 'px');
+  document.documentElement.style.setProperty('--fullscreen-height', height + 'px');
+}
+
+document.addEventListener('fullscreenchange', update_fullscreen_viewport);
+window.addEventListener('resize', function () {
+  if (document.fullscreenElement || document.documentElement.classList.contains('xbox-pseudo-fullscreen')) {
+    update_fullscreen_viewport();
+  }
+});
 
 function set_bios_status(state, message) {
   bios_state = state;
@@ -203,19 +271,6 @@ function configure_touch_controls() {
 }
 
 configure_touch_controls();
-
-/* Xbox Edge can expose the long-press Start/Menu escape gesture as a
- * secondary mouse-button sequence. Emscripten's SDL event bridge prevents
- * default on mousedown/mouseup, which can consume that browser gesture.
- * Let Xbox handle only the secondary-button sequence; preserve all normal
- * mouse and keyboard behavior elsewhere. */
-if (xbox_browser) {
-  ['mousedown', 'mouseup'].forEach(function (type) {
-    window.addEventListener(type, function (event) {
-      if (event.button === 2) event.stopImmediatePropagation();
-    }, true);
-  });
-}
 
 function browser_gamepad_button(buttons, index) {
   return !!(buttons && buttons[index] && buttons[index].pressed);
@@ -274,41 +329,6 @@ function browser_gamepad_update() {
   return selected;
 }
 
-function exit_fullscreen_from_gamepad() {
-  var nativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement ||
-    document.mozFullScreenElement || document.msFullscreenElement;
-  if (nativeFullscreen) {
-    var exit = document.exitFullscreen || document.webkitExitFullscreen ||
-      document.mozCancelFullScreen || document.msExitFullscreen;
-    if (exit) {
-      try { exit.call(document); } catch (error) { cout_print('[fullscreen] ' + error.message); }
-    }
-    return;
-  }
-  if (Browser.isFullscreen && Module.canvas && Module.canvas.exitFullscreen) {
-    try { Module.canvas.exitFullscreen(); } catch (error) { cout_print('[fullscreen] ' + error.message); }
-  }
-}
-
-function handle_gamepad_escape(pad) {
-  var startPressed = browser_gamepad_button(pad && pad.buttons, 9);
-  var selectPressed = browser_gamepad_button(pad && pad.buttons, 8);
-  var fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement ||
-    document.mozFullScreenElement || document.msFullscreenElement || Browser.isFullscreen);
-  /* Leave bare Start/Menu available to Xbox Edge for its Game Controls
-   * transition. Use Start+Select for the page-owned fullscreen escape. */
-  if (!startPressed || !selectPressed || !fullscreen) {
-    gamepad_start_since = 0;
-    gamepad_exit_latched = false;
-    return;
-  }
-  if (!gamepad_start_since) gamepad_start_since = Date.now();
-  if (!gamepad_exit_latched && Date.now() - gamepad_start_since >= 1200) {
-    gamepad_exit_latched = true;
-    exit_fullscreen_from_gamepad();
-  }
-}
-
 window.addEventListener('gamepadconnected', function (event) {
   var slot = browser_gamepad_indices.indexOf(null);
   if (slot >= 0) browser_gamepad_indices[slot] = event.gamepad.index;
@@ -318,8 +338,6 @@ window.addEventListener('gamepadconnected', function (event) {
 window.addEventListener('gamepaddisconnected', function (event) {
   var slot = browser_gamepad_indices.indexOf(event.gamepad.index);
   if (slot >= 0) browser_gamepad_indices[slot] = null;
-  gamepad_start_since = 0;
-  gamepad_exit_latched = false;
   if (!browser_gamepad_indices.some(function (index) { return index !== null; })) {
     document.body.classList.remove('gamepad-device');
   }
@@ -454,7 +472,6 @@ var check_controller = function () {
   _CheckJoy();
   _CheckKeyboard();
   var browserPad = browser_gamepad_update();
-  handle_gamepad_escape(browserPad);
   var states_src = HEAPU8.subarray(padStatus1, padStatus1 + 48);
   var states_arr;
   while (states_arrs.length > 50) {
@@ -467,23 +484,18 @@ var check_controller = function () {
   else {
     states_arr = new Uint8Array(states_src);
   }
-  /* PADSTATE stores KeyStatus at bytes 2-3 and JoyKeyStatus at bytes 4-5.
+  /* PADSTATE starts with the SDL joystick pointer, then PadMode/PadID.
+   * KeyStatus is at bytes 6-7 and JoyKeyStatus at bytes 8-9.
    * Keep keyboard/touch input independent from browser focus, and replace
    * the browser gamepad state every tick so disconnects cannot latch a bit. */
-  var keyboardMask = states_arr[2] | (states_arr[3] << 8);
-  states_arr[2] = keyboardMask & 0xff;
-  states_arr[3] = (keyboardMask >>> 8) & 0xff;
+  var keyboardMask = Module.doNotCaptureKeyboard ? keyboard_proxy_mask : (states_arr[6] | (states_arr[7] << 8));
+  states_arr[6] = keyboardMask & 0xff;
+  states_arr[7] = (keyboardMask >>> 8) & 0xff;
   apply_virtual_pad(states_arr);
   var gamepadMask = browser_gamepad_mask(browserPad);
-  if (gamepadMask) {
-    browser_gamepad_active = true;
-    states_arr[4] = gamepadMask.lo;
-    states_arr[5] = gamepadMask.hi;
-  } else if (browser_gamepad_active) {
-    browser_gamepad_active = false;
-    states_arr[4] = 0xff;
-    states_arr[5] = 0xff;
-  }
+  browser_gamepad_active = !!gamepadMask;
+  states_arr[8] = gamepadMask ? gamepadMask.lo : 0xff;
+  states_arr[9] = gamepadMask ? gamepadMask.hi : 0xff;
   //if(stat!=65535)  cout_print(stat);
   pcsx_worker.postMessage({ cmd: "padStatus", states: states_arr }, [states_arr.buffer]);
   setTimeout("check_controller()", 10);
