@@ -7,6 +7,9 @@ memory-card tools.
 
 Live demo: [PCSXjs-stream on GitHub Pages](https://ff7man.github.io/pcsxjs-streaming/)
 
+<img width="1377" height="803" alt="shot1" src="https://github.com/user-attachments/assets/a0109906-1c94-4c1b-b733-5e5a243e6e67" />
+<img width="1302" height="651" alt="shot2" src="https://github.com/user-attachments/assets/024849f2-bd3d-4d1f-9db0-a8c4ff827a33" />
+
 ## Why this was made
 
 Some browsers have a strict memory limit. In particular, Microsoft Edge on Xbox
