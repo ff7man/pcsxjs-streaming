@@ -106,7 +106,7 @@ void one_iter()
             updated_display / 1000);
 }
 
-int pcsx_init(const char *isofilename)
+int pcsx_init(const char *isofilename, const char *biosfilename)
 {
     char file[MAXPATHLEN] = "";
     char path[MAXPATHLEN];
@@ -122,8 +122,16 @@ int pcsx_init(const char *isofilename)
     strcpy(Config.Cdr, "Disabled");
     strcpy(Config.Pad1, "./libDFInput.so");
     strcpy(Config.Pad2, "./libDFInput.so");
-    strcpy(Config.Bios, "HLE");
-    Config.HLE = TRUE;
+    /* The browser places an optional user-supplied BIOS at this path before
+     * starting the core. psxMemReset() falls back to HLE if it is absent. */
+    if (biosfilename != NULL && biosfilename[0] != '\0') {
+        strncpy(Config.Bios, biosfilename, sizeof(Config.Bios) - 1);
+        Config.Bios[sizeof(Config.Bios) - 1] = '\0';
+        Config.BiosDir[0] = '\0';
+    } else {
+        strcpy(Config.Bios, "HLE");
+    }
+    Config.HLE = strcmp(Config.Bios, "HLE") == 0;
 
     // create & load default memcards if they don't exist
     CreateMemcard("card1.mcd", Config.Mcd1);

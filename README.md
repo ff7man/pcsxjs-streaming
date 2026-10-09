@@ -35,6 +35,7 @@ memory-constrained browsers, while keeping the original emulator architecture.
 - Local memory cards and save states.
 - Download and upload memory cards and save states.
 - Optional cloud storage for a memory card and save state.
+- User-provided BIOS loading from a local upload or the configured cloud server.
 - Configurable cloud/game server, including GitHub Pages deployments.
 
 ## Quick start
@@ -82,6 +83,14 @@ Useful options:
 ```sh
 go run server.go -host 0.0.0.0 -port 8000 -games ./games -cloud ./cloud-data
 ```
+
+To make BIOS files available from the cloud server, place the user's own 512 KiB
+BIOS dumps in the configured games directory using the name `bios.bin` or a
+case-insensitive `scph*.bin` name, such as `scph5501.bin`. With the default
+layout from this repository, that is `../enge-js/games/` when running from
+`pcsxjs-streaming`. The Cloud menu lists the discovered BIOS files. The Menu
+also supports uploading a local BIOS; it is retained in the browser's local
+storage and used for the next game start.
 
 The server supports CORS, HTTP range requests, and logs each request. If
 `games.csv` does not exist, it scans for CUE files and creates the catalog.

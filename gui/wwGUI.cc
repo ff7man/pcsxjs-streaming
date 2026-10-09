@@ -86,30 +86,32 @@ void *var_ptrs[] = {
     &(g.PadState[1])};
 void *get_ptr(int i)
 {
-  return var_ptrs[i];
+    return var_ptrs[i];
 }
-#include <emscripten.h>
-#include <emscripten/html5.h>
-EM_BOOL gamepad_callback(int eventType, const EmscriptenGamepadEvent *gamepadEvent, void *userData)
+
+extern "C" void InitBrowserVideo(void)
 {
-  printf("eventtype %d\n", eventType);
-  InitSDLJoy();
-  return 0;
-};
+  if (sdl_display != NULL)
+    return;
+
+  if (!SDL_WasInit(SDL_INIT_VIDEO) && SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) {
+    printf("(x) Failed to init browser video: %s\n", SDL_GetError());
+    return;
+  }
+
+  sdl_display = SDL_SetVideoMode(640, 480, 32, SDL_HWSURFACE);
+  sdl_ximage = SDL_CreateRGBSurface(SDL_HWSURFACE, 640, 480, 32,
+                                    0x00ff0000, 0x0000ff00, 0x000000ff, 0);
+}
+
+extern "C" void InitBrowserAudio(void)
+{
+  SetupSound();
+}
 }
 int main()
 {
-  //	if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_JOYSTICK|SDL_INIT_AUDIO)<0)
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO) < 0)
-    printf("(x) Failed to Init SDL!!!\n");
-  else
-  {
-    printf("sdl init ok\n");
-    sdl_display = SDL_SetVideoMode(640, 480, 32, SDL_HWSURFACE);
-    sdl_ximage = SDL_CreateRGBSurface(SDL_HWSURFACE, 640, 480, 32, 0x00ff0000, 0x0000ff00, 0x000000ff, 0);
-  }
   psxVuw = (unsigned short *)psxVub;
-  SetupSound();
   LoadPADConfig();
   EM_ASM(
       FS.mkdir('/cfg');
@@ -131,10 +133,7 @@ int main()
   g.PadState[1].PadID = 0x41;
   g.PadState[0].JoyKeyStatus = 0xFFFF;
   g.PadState[1].JoyKeyStatus = 0xFFFF;
-  InitSDLJoy();
   InitKeyboard();
-  emscripten_set_gamepadconnected_callback(0, 1, gamepad_callback);
-  emscripten_set_gamepaddisconnected_callback(0, 1, gamepad_callback);
   EM_ASM({ var_setup(); });
   emscripten_exit_with_live_runtime();
 }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PCSX Web Emulator</title>
-  <link rel="stylesheet" type="text/css" href="pcsx.css">
+  <link rel="stylesheet" type="text/css" href="pcsx.css?v=20261009-xbox-controls">
 </head>
 <body class="app-shell">
   <header class="app-header">
@@ -12,6 +12,7 @@
     <div class="app-actions">
       <input type="file" id="iso_opener" onchange="pcsx_readfile(this)" accept=".bin,.cue,.iso,.img" multiple disabled hidden>
       <label for="iso_opener" class="icon-button file-upload-button" aria-label="Choose file" title="Choose file">Choose file</label>
+      <input type="file" id="bios_opener" onchange="pcsx_upload_bios(this)" accept=".bin,.rom" hidden>
       <button id="cloud-button" class="icon-button" type="button" aria-label="Cloud" title="Cloud">Cloud</button>
       <button id="menu-button" class="icon-button" type="button" aria-label="Menu" title="Menu">Menu</button>
       <button id="fullscreen" class="icon-button" type="button" aria-label="Fullscreen" title="Fullscreen" onclick="Module.goFullscreen()">Fullscreen</button>
@@ -21,7 +22,7 @@
 
   <main class="app-main">
     <div id="pcsx_app" class="main">
-      <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+      <canvas class="emscripten" id="canvas"></canvas>
     </div>
 
   </main>
@@ -61,6 +62,8 @@
         <li class="menu-section">Memory cards</li>
         <li><button class="app-button" type="button" data-feedback="Downloaded" onclick="pcsx_download_memory_card()">Download Memory Card</button></li>
         <li><label class="app-button" data-feedback="Selected" for="upload-memory-card">Upload Memory Card</label><input id="upload-memory-card" type="file" accept=".mcr,.mc,.bin" hidden onchange="pcsx_upload_memory_card(this)"></li>
+        <li class="menu-section">BIOS</li>
+        <li><label class="app-button" data-feedback="Selected" for="bios_opener">Upload BIOS</label></li>
         <li><button class="app-button" type="button" onclick="window.location.reload()">Reload Window</button></li>
       </ul>
     </div>
@@ -78,6 +81,9 @@
         <li><button class="app-button" type="button" data-feedback="Downloaded" onclick="pcsx_cloud_download_state()">Download State</button></li>
         <li><button class="app-button" type="button" data-feedback="Uploaded" onclick="pcsx_cloud_upload_memory_card()">Upload Memory Card</button></li>
         <li><button class="app-button" type="button" data-feedback="Downloaded" onclick="pcsx_cloud_download_memory_card()">Download Memory Card</button></li>
+        <li class="menu-section">BIOS</li>
+        <li id="bios-list-status" role="status">Loading BIOS files...</li>
+        <li id="bios-list"></li>
       </ul>
       <div class="cloud-server-config">
         <label for="cloud-server-url">Server</label>
@@ -100,6 +106,7 @@
         <p>Cloud games are streamed in small parts as needed, so the entire disc does not need to fit in browser memory.</p>
         <p>This keeps memory usage low enough to play larger games on Xbox, where Microsoft Edge has roughly a 1&nbsp;GB memory limit.</p>
         <p>For local games, choose the CUE file and all BIN files it references.</p>
+        <p>Upload your own 512 KiB BIOS from Menu, or load <code>games/bios.bin</code> from the configured server. The BIOS is used the next time a game starts.</p>
         <h3>Keyboard controls</h3>
         <ul class="help-list">
           <li>D-pad: Arrow Keys</li>
@@ -116,6 +123,7 @@
         </ul>
         <h3>Mobile controls</h3>
         <p>Use the virtual stick and face buttons. Touch controls support multiple buttons at once.</p>
+        <p>On Xbox, press Start/Menu by itself to let Edge switch Game Controls mode. To leave fullscreen without competing with Edge, hold Start/Menu + Select/View for about 1.2 seconds.</p>
         <h3>Save data</h3>
         <p>Memory cards are saved locally. The Menu contains save-state and memory-card tools; Cloud contains optional server upload and download actions.</p>
         <h3>Credits</h3>
@@ -124,8 +132,8 @@
     </div>
   </div>
 
-  <script type="text/javascript" src="pcsx_ui.js"></script>
-  <script type="text/javascript" src="pcsx_ww.js?v=20261008-enter-start"></script>
+  <script type="text/javascript" src="pcsx_ui.js?v=20261009-xbox-sdl-capture"></script>
+  <script type="text/javascript" src="pcsx_ww.js?v=20261009-deferred-sdl"></script>
   <script type="text/javascript">
     (function () {
       var menu = document.getElementById('control-menu');
@@ -135,7 +143,7 @@
       document.getElementById('cloud-button').addEventListener('click', function () {
         var serverInput = document.getElementById('cloud-server-url');
         if (serverInput) serverInput.value = localStorage.getItem('pcsxjs-cloud-url') || new URLSearchParams(window.location.search).get('server') || '';
-        cloud.classList.add('open'); pcsx_cloud_status(); pcsx_load_game_catalog();
+        cloud.classList.add('open'); pcsx_cloud_status(); pcsx_load_game_catalog(); pcsx_load_bios_catalog();
       });
       document.getElementById('help-button').addEventListener('click', function () { help.classList.add('open'); });
       document.getElementById('cloud-server-url').addEventListener('pointerdown', function (event) { event.stopPropagation(); });

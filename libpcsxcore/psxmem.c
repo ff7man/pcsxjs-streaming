@@ -115,7 +115,10 @@ void psxMemReset() {
 	memset(psxP, 0, 0x00010000);
 
 	if (strcmp(Config.Bios, "HLE") != 0) {
-		sprintf(bios, "%s/%s", Config.BiosDir, Config.Bios);
+		if (Config.Bios[0] == '/')
+			snprintf(bios, sizeof(bios), "%s", Config.Bios);
+		else
+			snprintf(bios, sizeof(bios), "%s/%s", Config.BiosDir, Config.Bios);
 		f = fopen(bios, "rb");
 
 		if (f == NULL) {

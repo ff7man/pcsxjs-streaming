@@ -31,6 +31,10 @@ type gameEntry struct {
 	url  string
 }
 
+type biosEntry struct {
+	Name string `json:"name"`
+}
+
 const memoryCardSize = 128 * 1024
 const maxStateBytes = 32 * 1024 * 1024
 
@@ -138,6 +142,34 @@ func contentType(path string) string {
 	return "application/octet-stream"
 }
 
+func isBIOSName(name string) bool {
+	lower := strings.ToLower(name)
+	return lower == "bios.bin" || (strings.HasPrefix(lower, "scph") && strings.HasSuffix(lower, ".bin"))
+}
+
+func discoverBIOS(gamesDir string) ([]biosEntry, error) {
+	root, err := filepath.EvalSymlinks(gamesDir)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]biosEntry, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || !isBIOSName(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err == nil && info.Size() == 512*1024 {
+			result = append(result, biosEntry{Name: entry.Name()})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
+	return result, nil
+}
+
 func (s *testServer) cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, POST, OPTIONS")
@@ -232,6 +264,42 @@ func (s *testServer) staticFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *testServer) cloud(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/bios/") {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/api/bios/")
+		if name == "" || strings.Contains(name, "/") || !isBIOSName(name) {
+			http.NotFound(w, r)
+			return
+		}
+		bios, err := discoverBIOS(s.gamesDir)
+		if err != nil {
+			http.Error(w, "unable to scan BIOS files", http.StatusInternalServerError)
+			return
+		}
+		found := false
+		for _, entry := range bios {
+			if entry.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
+		path, ok := safePath(s.gamesDir, "/"+name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, path)
+		return
+	}
+
 	name := ""
 	contentType := "application/octet-stream"
 	limit := int64(memoryCardSize)
@@ -239,8 +307,22 @@ func (s *testServer) cloud(w http.ResponseWriter, r *http.Request) {
 	case "/api/status":
 		state, _ := os.Stat(filepath.Join(s.cloudDir, "state.gz"))
 		card, _ := os.Stat(filepath.Join(s.cloudDir, "memorycard.mcr"))
+		bios, _ := discoverBIOS(s.gamesDir)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{"state": state != nil, "memorycard": card != nil})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"state": state != nil, "memorycard": card != nil, "bios": len(bios) > 0})
+		return
+	case "/api/bios":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		bios, err := discoverBIOS(s.gamesDir)
+		if err != nil {
+			http.Error(w, "unable to scan BIOS files", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(bios)
 		return
 	case "/api/state":
 		name, contentType, limit = "state.gz", "application/gzip", maxStateBytes

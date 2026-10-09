@@ -97,7 +97,7 @@ function pcsx_mainloop() {
 	_one_iter();
 
 }
-var pcsx_init = Module.cwrap("pcsx_init", "number", ["string"])
+var pcsx_init = Module.cwrap("pcsx_init", "number", ["string", "string"])
 var cdrIsoSetStreamURL = Module.cwrap("cdrIsoSetStreamURL", "number", ["string"])
 var pcsxClose = Module.cwrap("pcsx_close", "number", [])
 var ls = Module.cwrap("ls", "null", ["string"])
@@ -108,6 +108,8 @@ var remote_running = false;
 var emulator_started = false;
 var load_serial = 0;
 var MEMORY_CARD_SIZE = 1024 * 8 * 16;
+var BIOS_SIZE = 512 * 1024;
+var BIOS_PATH = '/bios.bin';
 var STATE_PATH = '/home/web_user/.pcsx/pcsxjs-state.gz';
 
 function stop_current_game() {
@@ -265,7 +267,7 @@ var load_or_fetch = function (url) {
 		.then(locateBootChunk)
 		.then(function () {
 			if (serial !== load_serial) throw new Error('stream load superseded');
-			var result = pcsx_init('stream://remote');
+			var result = pcsx_init('stream://remote', BIOS_PATH);
 			if (result !== 0) {
 				throw new Error('unable to initialize streamed disc');
 			}
@@ -294,7 +296,7 @@ var readfile_and_run = function (iso_name, blob) {
 		FS.writeFile("/" + iso_name, arr);
 		stdout_array = arr;
 		Module.setStatus('Running!');
-		pcsx_init("/" + iso_name);
+		pcsx_init("/" + iso_name, BIOS_PATH);
 		emulator_started = true;
 		Module.emuRunning = true;
 		padStatus1 = _get_ptr(-2);
@@ -343,7 +345,7 @@ var readfiles_and_run = function (files) {
 		if (index >= files.length) {
 			stdout_array = null;
 			Module.setStatus('Running!');
-			pcsx_init('/' + entryFile.name);
+			pcsx_init('/' + entryFile.name, BIOS_PATH);
 			emulator_started = true;
 			Module.emuRunning = true;
 			padStatus1 = _get_ptr(-2);
@@ -439,6 +441,14 @@ var main_onmessage = function (event) {
 			Module.setStatus('Downloading...');
 			cout_print(data.file.name)
 			readfile_and_run(data.file.name, data.file);
+			break;
+		case "loadbios":
+			if (!data.bios || data.bios.byteLength !== BIOS_SIZE) {
+				Module.setStatus('BIOS must be exactly 512 KiB');
+				break;
+			}
+			FS.writeFile(BIOS_PATH, new Uint8Array(data.bios));
+			Module.setStatus('BIOS loaded; start or reload a game to use it');
 			break;
 		case "loadfiles":
 			cout_print('loading local disc files');
