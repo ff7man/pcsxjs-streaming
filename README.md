@@ -1,6 +1,6 @@
 # PCSXjs-stream
 
-This version is based on [tjwei/pcsxjs](https://github.com/tjwei/pcsxjs) which runs a very old version of pcsx. It has less game compatibility and has various issues in game like missing audio in Digimon World or being unable to load certain games sim city. I have another version built on a modern core you should use instead. https://github.com/ff7man/pcsxEdge
+This version is based on [tjwei/pcsxjs](https://github.com/tjwei/pcsxjs) which runs a very old version of pcsx. It has less game compatibility and you should use [pcsxEdge](https://github.com/ff7man/pcsxEdge) instead. This build has various issues in game like missing audio in Digimon World or being unable to load certain games like sim city. The other version is built on a modern core with 9+ years of emulator improvements. 
 
 PCSXjs-stream is a browser-based PlayStation emulator based on
 [tjwei/pcsxjs](https://github.com/tjwei/pcsxjs). The stream in the name comes from changes allowing it to stream the CD-ROM
