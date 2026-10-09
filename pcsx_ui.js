@@ -413,6 +413,28 @@ function var_setup() {
   update_state_controls();
 }
 
+function resume_browser_audio() {
+  if (typeof SDL === 'undefined' || !SDL.audioContext || SDL.audioContext.state !== 'suspended') return;
+  var context = SDL.audioContext;
+  try {
+    var buffer = context.createBuffer(1, 1, context.sampleRate);
+    var source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start(0);
+  } catch (error) {
+    cout_print('[audio] warm-up failed: ' + error.message);
+  }
+  var resume = context.resume();
+  if (resume && resume.catch) resume.catch(function (error) {
+    cout_print('[audio] resume failed: ' + error.message);
+  });
+}
+
+['pointerdown', 'touchstart', 'click'].forEach(function (type) {
+  document.addEventListener(type, resume_browser_audio, true);
+});
+
 function send_bios(bytes, source, name) {
   if (!bytes || bytes.length !== 512 * 1024) {
     set_bios_status('error', 'invalid file; BIOS must be exactly 512 KiB');
@@ -507,11 +529,11 @@ function set_virtual_button(bit, pressed) {
 }
 
 function apply_virtual_pad(states) {
-  /* PADSTATE.KeyStatus is the active-low 16-bit field at offset 2. */
-  var keyboardMask = states[2] | (states[3] << 8);
+  /* PADSTATE.KeyStatus is the active-low 16-bit field at offset 6. */
+  var keyboardMask = states[6] | (states[7] << 8);
   var combined = keyboardMask & virtual_pad_mask;
-  states[2] = combined & 0xff;
-  states[3] = (combined >>> 8) & 0xff;
+  states[6] = combined & 0xff;
+  states[7] = (combined >>> 8) & 0xff;
 }
 
 function install_virtual_controls() {
@@ -563,6 +585,7 @@ var pcsx_readfile = function (controller) {
   file_list = Array.prototype.slice.call(controller.files || []);
   if (!file_list.length) return;
   _InitBrowserAudio();
+  resume_browser_audio();
   _InitBrowserVideo();
   pcsx_worker.postMessage({ cmd: "loadfiles", files: file_list });
   setTimeout("check_controller()", 10);
@@ -578,6 +601,7 @@ var pcsx_loadurl = function (requestedURL) {
   document.getElementById('iso_opener').disabled = true;
   cout_print('pcsx_loadurl ' + url);
   _InitBrowserAudio();
+  resume_browser_audio();
   _InitBrowserVideo();
   pcsx_worker.postMessage({ cmd: "loadurl", iso: url });
   setTimeout("check_controller()", 10);

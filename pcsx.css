@@ -403,6 +403,25 @@ body.touch-device #touch-controls { display: block; }
   .touch-menu { left: auto; right: 12rem; bottom: 1rem; transform: none; }
 }
 
+/* Narrow screens use the original top toolbar layout. */
+@media (max-width: 700px) {
+  body.app-shell { display: grid; grid-template-rows: max-content minmax(0, 1fr); row-gap: .35rem; overflow-x: hidden; overflow-y: auto; }
+  .app-header { position: relative; inset: auto; flex-direction: row; justify-content: flex-start; width: 100%; height: auto; padding: .5rem .75rem; }
+  .app-header h1 { position: static; width: auto; max-height: none; font-size: clamp(1rem, 3vw, 1.6rem); line-height: 1; writing-mode: horizontal-tb; transform: none; }
+  .app-actions { position: static; flex-direction: row; justify-content: flex-end; width: auto; margin-left: auto; padding: 0; background: transparent; transform: none; }
+  .app-main { width: 100%; height: auto; min-height: 0; margin: 0; background: #202020; }
+  .app-main > .main { width: min(100%, calc((100dvh - 5rem) * 4 / 3)); height: auto; max-height: 100%; }
+}
+
+@media (pointer: coarse) and (orientation: landscape) {
+  body.touch-device.app-shell { display: grid; grid-template-rows: max-content minmax(0, 1fr); row-gap: .35rem; overflow-x: hidden; overflow-y: auto; }
+  body.touch-device .app-header { position: relative; inset: auto; flex-direction: row; justify-content: flex-start; width: 100%; height: auto; padding: .5rem .75rem; }
+  body.touch-device .app-header h1 { position: static; width: auto; max-height: none; font-size: clamp(1rem, 3vw, 1.6rem); line-height: 1; writing-mode: horizontal-tb; transform: none; }
+  body.touch-device .app-actions { position: static; flex-direction: row; justify-content: flex-end; width: auto; margin-left: auto; padding: 0; background: transparent; transform: none; }
+  body.touch-device .app-main { width: 100%; height: auto; min-height: 0; margin: 0; background: #202020; }
+  body.touch-device .app-main > .main { width: min(100%, calc((100dvh - 5rem) * 4 / 3)); height: auto; max-height: 100%; }
+}
+
 .main:-moz-full-screen .control div{
     font-size: 4vh;
   }
