@@ -56,6 +56,10 @@ EM_CACHE=/tmp/pcsxjs-em-cache make
 
 This generates `pcsx_worker.js` and `pcsx_ww.js`.
 
+Note: this build does not yet use the [WebAssembly PS1 JIT](https://github.com/kblood/psx-wasm-jit-libretro)
+from `kblood/psx-wasm-jit-libretro` for faster emulation, so the PS1 CPU runs
+through the interpreter.
+
 ### Run the combined server
 
 The included `server.go` serves the emulator frontend, game files, catalog, and
