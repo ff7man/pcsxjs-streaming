@@ -20,7 +20,7 @@ plugins/dfsound/spu.o plugins/dfsound/freeze.o plugins/dfsound/cfg.o  plugins/df
 plugins/sdlinput/cfg.o     plugins/sdlinput/pad_worker.o plugins/sdlinput/analog.o
 WORKER_FLAGS= --post-js worker_funcs.js -s TOTAL_MEMORY=419430400 -s EXPORTED_RUNTIME_METHODS=['cwrap','getValue','setValue'] -s EXPORTED_FUNCTIONS=$(WORKER_EXPORT)
 
-UI_EXPORT="['_main','_get_ptr', '_render','_LoadPADConfig', '_CheckKeyboard', '_CheckJoy', '_SoundFeedStreamData', '_SoundGetBytesBuffered', '_malloc', '_free']"
+UI_EXPORT="['_main','_get_ptr', '_render','_InitBrowserVideo', '_InitBrowserAudio', '_LoadPADConfig', '_CheckKeyboard', '_CheckJoy', '_SoundFeedStreamData', '_SoundGetBytesBuffered', '_malloc', '_free']"
 UI_OBJS=plugins/sdlinput/cfg.o plugins/sdlinput/xkb.o gui/wwGUI.o \
 plugins/sdlinput/sdljoy.o plugins/sdlinput/analog.o plugins/dfsound/sdl.o  
 # The browser UI mounts IDBFS in wwGUI.cc for persistent input settings.

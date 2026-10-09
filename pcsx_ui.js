@@ -3,6 +3,9 @@
 var do_iter = true;
 
 var Module = {
+  /* Xbox Edge owns the long-press Start/Menu escape gesture. Do not let the
+     Emscripten SDL keyboard bridge install document-wide event handlers there. */
+  doNotCaptureKeyboard: /xbox/i.test(((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' + (navigator.userAgent || '')),
   preRun: [],
   postRun: [],
   print: (function () {
@@ -159,6 +162,143 @@ var active_game_button = null;
 var memory_card_timer;
 var virtual_pad_mask = 0xffff;
 var virtual_stick_pointer = null;
+var browser_gamepad_indices = [null, null];
+var browser_gamepad_active = false;
+var gamepad_start_since = 0;
+var gamepad_exit_latched = false;
+var xbox_browser = /xbox/i.test(((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' + (navigator.userAgent || ''));
+
+function configure_touch_controls() {
+  var platform = (navigator.userAgentData && navigator.userAgentData.platform) || '';
+  var userAgent = navigator.userAgent || '';
+  var xboxBrowser = xbox_browser;
+  var mobileBrowser = /Android|iPhone|iPad|iPod|Windows Phone/i.test(userAgent);
+  var actualTouch = Number(navigator.maxTouchPoints || 0) > 0 && mobileBrowser;
+  document.body.classList.toggle('touch-device', actualTouch && !xboxBrowser);
+}
+
+configure_touch_controls();
+
+/* Xbox Edge can expose the long-press Start/Menu escape gesture as a
+ * secondary mouse-button sequence. Emscripten's SDL event bridge prevents
+ * default on mousedown/mouseup, which can consume that browser gesture.
+ * Let Xbox handle only the secondary-button sequence; preserve all normal
+ * mouse and keyboard behavior elsewhere. */
+if (xbox_browser) {
+  ['mousedown', 'mouseup'].forEach(function (type) {
+    window.addEventListener(type, function (event) {
+      if (event.button === 2) event.stopImmediatePropagation();
+    }, true);
+  });
+}
+
+function browser_gamepad_button(buttons, index) {
+  return !!(buttons && buttons[index] && buttons[index].pressed);
+}
+
+function browser_gamepad_mask(pad) {
+  if (!pad) return null;
+  var lo = 0xffff;
+  var hi = 0xffff;
+  var axes = pad.axes || [];
+  var pressed = function (index) { return browser_gamepad_button(pad.buttons, index); };
+  var axis = function (index) { return Number(axes[index] || 0); };
+
+  if (axis(0) < -0.4 || pressed(14)) lo &= ~0x80;
+  if (axis(0) > 0.4 || pressed(15)) lo &= ~0x20;
+  if (axis(1) < -0.4 || pressed(12)) lo &= ~0x10;
+  if (axis(1) > 0.4 || pressed(13)) lo &= ~0x40;
+  if (pressed(8)) lo &= ~0x01; // select / view
+  if (pressed(9)) lo &= ~0x08; // start / menu
+
+  if (pressed(3)) hi &= ~0x10; // triangle / Y
+  if (pressed(1)) hi &= ~0x20; // circle / B
+  if (pressed(0)) hi &= ~0x40; // cross / A
+  if (pressed(2)) hi &= ~0x80; // square / X
+  if (pressed(4)) hi &= ~0x04; // L1 / LB
+  if (pressed(6)) hi &= ~0x01; // L2 / LT
+  if (pressed(5)) hi &= ~0x08; // R1 / RB
+  if (pressed(7)) hi &= ~0x02; // R2 / RT
+  return { lo: lo, hi: hi };
+}
+
+function browser_gamepad_update() {
+  if (!navigator.getGamepads) {
+    document.body.classList.remove('gamepad-device');
+    return null;
+  }
+  var pads = navigator.getGamepads() || [];
+  var selected = null;
+  for (var slot = 0; slot < browser_gamepad_indices.length; slot++) {
+    var index = browser_gamepad_indices[slot];
+    var existing = index === null ? null : pads[index];
+    if (existing && existing.connected !== false) {
+      if (!selected) selected = existing;
+      continue;
+    }
+    browser_gamepad_indices[slot] = null;
+  }
+  for (var i = 0; i < pads.length && i < browser_gamepad_indices.length; i++) {
+    if (pads[i] && pads[i].connected !== false && browser_gamepad_indices.indexOf(i) < 0) {
+      var free = browser_gamepad_indices.indexOf(null);
+      if (free >= 0) browser_gamepad_indices[free] = i;
+      if (!selected) selected = pads[i];
+    }
+  }
+  document.body.classList.toggle('gamepad-device', !!selected);
+  return selected;
+}
+
+function exit_fullscreen_from_gamepad() {
+  var nativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement ||
+    document.mozFullScreenElement || document.msFullscreenElement;
+  if (nativeFullscreen) {
+    var exit = document.exitFullscreen || document.webkitExitFullscreen ||
+      document.mozCancelFullScreen || document.msExitFullscreen;
+    if (exit) {
+      try { exit.call(document); } catch (error) { cout_print('[fullscreen] ' + error.message); }
+    }
+    return;
+  }
+  if (Browser.isFullscreen && Module.canvas && Module.canvas.exitFullscreen) {
+    try { Module.canvas.exitFullscreen(); } catch (error) { cout_print('[fullscreen] ' + error.message); }
+  }
+}
+
+function handle_gamepad_escape(pad) {
+  var startPressed = browser_gamepad_button(pad && pad.buttons, 9);
+  var selectPressed = browser_gamepad_button(pad && pad.buttons, 8);
+  var fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement ||
+    document.mozFullScreenElement || document.msFullscreenElement || Browser.isFullscreen);
+  /* Leave bare Start/Menu available to Xbox Edge for its Game Controls
+   * transition. Use Start+Select for the page-owned fullscreen escape. */
+  if (!startPressed || !selectPressed || !fullscreen) {
+    gamepad_start_since = 0;
+    gamepad_exit_latched = false;
+    return;
+  }
+  if (!gamepad_start_since) gamepad_start_since = Date.now();
+  if (!gamepad_exit_latched && Date.now() - gamepad_start_since >= 1200) {
+    gamepad_exit_latched = true;
+    exit_fullscreen_from_gamepad();
+  }
+}
+
+window.addEventListener('gamepadconnected', function (event) {
+  var slot = browser_gamepad_indices.indexOf(null);
+  if (slot >= 0) browser_gamepad_indices[slot] = event.gamepad.index;
+  document.body.classList.add('gamepad-device');
+});
+
+window.addEventListener('gamepaddisconnected', function (event) {
+  var slot = browser_gamepad_indices.indexOf(event.gamepad.index);
+  if (slot >= 0) browser_gamepad_indices[slot] = null;
+  gamepad_start_since = 0;
+  gamepad_exit_latched = false;
+  if (!browser_gamepad_indices.some(function (index) { return index !== null; })) {
+    document.body.classList.remove('gamepad-device');
+  }
+});
 
 function bytes_to_base64(bytes) {
   var binary = '';
@@ -218,15 +358,46 @@ function var_setup() {
   cout_print("start worker")
   // Bump this when worker logic changes so browsers do not reuse an older
   // cached bundle while testing streaming or local-disc fixes.
-  pcsx_worker = new Worker("pcsx_worker.js?v=20261008-local-cue");
+  pcsx_worker = new Worker("pcsx_worker.js?v=20261008-xbox-gamepad");
   pcsx_worker.onmessage = pcsx_worker_onmessage;
   document.getElementById('iso_opener').disabled=false;
   var spinner = document.getElementById('spinner');
   if (spinner && spinner.parentElement) spinner.parentElement.removeChild(spinner);
   setTimeout("Module.setStatus('open an iso file using the above button.')", 2);
   restore_memory_cards();
+  restore_bios();
   memory_card_timer = setInterval(request_memory_cards, 2000);
   update_state_controls();
+}
+
+function send_bios(bytes, status) {
+  if (!bytes || bytes.length !== 512 * 1024) {
+    Module.setStatus('BIOS must be exactly 512 KiB');
+    return false;
+  }
+  var buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  pcsx_worker.postMessage({ cmd: 'loadbios', bios: buffer }, [buffer]);
+  if (status) Module.setStatus(status);
+  return true;
+}
+
+function restore_bios() {
+  var encoded = localStorage.getItem('pcsxjs-bios');
+  if (encoded) send_bios(base64_to_bytes(encoded), 'saved BIOS loaded');
+}
+
+function pcsx_upload_bios(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    var bios = new Uint8Array(reader.result);
+    if (send_bios(bios, 'BIOS uploaded; start or reload a game to use it')) {
+      localStorage.setItem('pcsxjs-bios', bytes_to_base64(bios));
+    }
+    input.value = '';
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 if (window.File && window.FileReader && window.FileList && window.Blob) {
@@ -254,6 +425,8 @@ var check_controller = function () {
   }
   _CheckJoy();
   _CheckKeyboard();
+  var browserPad = browser_gamepad_update();
+  handle_gamepad_escape(browserPad);
   var states_src = HEAPU8.subarray(padStatus1, padStatus1 + 48);
   var states_arr;
   while (states_arrs.length > 50) {
@@ -266,7 +439,23 @@ var check_controller = function () {
   else {
     states_arr = new Uint8Array(states_src);
   }
+  /* PADSTATE stores KeyStatus at bytes 2-3 and JoyKeyStatus at bytes 4-5.
+   * Keep keyboard/touch input independent from browser focus, and replace
+   * the browser gamepad state every tick so disconnects cannot latch a bit. */
+  var keyboardMask = states_arr[2] | (states_arr[3] << 8);
+  states_arr[2] = keyboardMask & 0xff;
+  states_arr[3] = (keyboardMask >>> 8) & 0xff;
   apply_virtual_pad(states_arr);
+  var gamepadMask = browser_gamepad_mask(browserPad);
+  if (gamepadMask) {
+    browser_gamepad_active = true;
+    states_arr[4] = gamepadMask.lo;
+    states_arr[5] = gamepadMask.hi;
+  } else if (browser_gamepad_active) {
+    browser_gamepad_active = false;
+    states_arr[4] = 0xff;
+    states_arr[5] = 0xff;
+  }
   //if(stat!=65535)  cout_print(stat);
   pcsx_worker.postMessage({ cmd: "padStatus", states: states_arr }, [states_arr.buffer]);
   setTimeout("check_controller()", 10);
@@ -278,11 +467,11 @@ function set_virtual_button(bit, pressed) {
 }
 
 function apply_virtual_pad(states) {
-  /* PADSTATE.KeyStatus is the active-low 16-bit field at offset 8. */
-  var keyboardMask = states[8] | (states[9] << 8);
+  /* PADSTATE.KeyStatus is the active-low 16-bit field at offset 2. */
+  var keyboardMask = states[2] | (states[3] << 8);
   var combined = keyboardMask & virtual_pad_mask;
-  states[8] = combined & 0xff;
-  states[9] = (combined >>> 8) & 0xff;
+  states[2] = combined & 0xff;
+  states[3] = (combined >>> 8) & 0xff;
 }
 
 function install_virtual_controls() {
@@ -333,6 +522,8 @@ var pcsx_readfile = function (controller) {
   cout_print("pcsx_readfile\n");
   file_list = Array.prototype.slice.call(controller.files || []);
   if (!file_list.length) return;
+  _InitBrowserAudio();
+  _InitBrowserVideo();
   pcsx_worker.postMessage({ cmd: "loadfiles", files: file_list });
   setTimeout("check_controller()", 10);
   return;
@@ -346,6 +537,8 @@ var pcsx_loadurl = function (requestedURL) {
   update_state_controls();
   document.getElementById('iso_opener').disabled = true;
   cout_print('pcsx_loadurl ' + url);
+  _InitBrowserAudio();
+  _InitBrowserVideo();
   pcsx_worker.postMessage({ cmd: "loadurl", iso: url });
   setTimeout("check_controller()", 10);
 };
@@ -538,7 +731,7 @@ function pcsx_cloud_status() {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     return response.json();
   }).then(function (result) {
-    status.textContent = 'Cloud connected' + (result.state ? ' · state available' : '') + (result.memorycard ? ' · memory card available' : '');
+    status.textContent = 'Cloud connected' + (result.bios ? ' · BIOS available' : '') + (result.state ? ' · state available' : '') + (result.memorycard ? ' · memory card available' : '');
   }).catch(function (error) {
     status.textContent = 'Unable to connect to cloud service';
     cout_print('[cloud] ' + error.message);
@@ -696,4 +889,60 @@ function pcsx_cloud_download_memory_card() {
     restore_memory_cards();
     Module.setStatus('memory card downloaded from cloud');
   }).catch(function (error) { Module.setStatus('cloud download failed: ' + error.message); });
+}
+
+function pcsx_load_bios_catalog() {
+  var list = document.getElementById('bios-list');
+  var status = document.getElementById('bios-list-status');
+  if (!list || !status) return;
+  status.hidden = false;
+  status.textContent = 'Loading BIOS files...';
+  list.replaceChildren();
+  fetch(pcsx_cloud_url('/api/bios'), { cache: 'no-store' }).then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }).then(function (biosFiles) {
+    biosFiles.forEach(function (entry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'app-button';
+      button.textContent = entry.name;
+      button.addEventListener('click', function () {
+        pcsx_cloud_download_bios(entry.name, button);
+      });
+      var item = document.createElement('div');
+      item.append(button);
+      list.append(item);
+    });
+    status.textContent = biosFiles.length ? '' : 'No 512 KiB BIOS files found';
+    status.hidden = biosFiles.length > 0;
+  }).catch(function (error) {
+    status.textContent = 'Unable to load BIOS files: ' + error.message;
+    cout_print('[bios] ' + error.message);
+  });
+}
+
+function pcsx_cloud_download_bios(name, button) {
+  if (!name) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Loading...';
+  }
+  fetch(pcsx_cloud_url('/api/bios/' + encodeURIComponent(name)), { cache: 'no-store' }).then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.arrayBuffer();
+  }).then(function (buffer) {
+    var bios = new Uint8Array(buffer);
+    if (!send_bios(bios, 'cloud BIOS loaded; start or reload a game to use it')) {
+      throw new Error('cloud BIOS is not 512 KiB');
+    }
+    localStorage.setItem('pcsxjs-bios', bytes_to_base64(bios));
+  }).catch(function (error) {
+    Module.setStatus('cloud BIOS load failed: ' + error.message);
+  }).then(function () {
+    if (button) {
+      button.disabled = false;
+      button.textContent = name;
+    }
+  });
 }
