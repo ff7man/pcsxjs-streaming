@@ -1,9 +1,10 @@
 # PCSXjs-stream
 
+This version is based on [tjwei/pcsxjs](https://github.com/tjwei/pcsxjs) which runs a very old version of pcsx. It has less game compatibility and has various issues in game like missing audio in Digimon World or being unable to load certain games sim city. I have another version built on a modern core you should use instead. https://github.com/ff7man/pcsxEdge
+
 PCSXjs-stream is a browser-based PlayStation emulator based on
-[tjwei/pcsxjs](https://github.com/tjwei/pcsxjs). It adds range-streamed CD-ROM
-loading, a responsive controller UI, cloud game catalogs, save-state tools, and
-memory-card tools.
+[tjwei/pcsxjs](https://github.com/tjwei/pcsxjs). The stream in the name comes from changes allowing it to stream the CD-ROM
+over a network. It also features a responsive controller UI, cloud game catalogs, save state tools, and memory card tools.
 
 Live demo: [PCSXjs-stream on GitHub Pages](https://ff7man.github.io/pcsxjs-streaming/)
 
@@ -20,7 +21,7 @@ starts.
 PCSXjs-stream requests only the parts of the disc that the emulator needs. A
 small JavaScript cache keeps recently used sectors available while old chunks
 can be released. This makes larger games practical on Xbox and other
-memory-constrained browsers, while keeping the original emulator architecture.
+memory constrained browsers, while keeping the original emulator architecture.
 
 ## Features
 
