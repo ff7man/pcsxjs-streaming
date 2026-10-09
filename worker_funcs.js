@@ -448,6 +448,7 @@ var main_onmessage = function (event) {
 				break;
 			}
 			FS.writeFile(BIOS_PATH, new Uint8Array(data.bios));
+			postMessage({ cmd: "bios_ready", source: data.source || "browser", name: data.name || "bios.bin" });
 			Module.setStatus('BIOS loaded; start or reload a game to use it');
 			break;
 		case "loadfiles":

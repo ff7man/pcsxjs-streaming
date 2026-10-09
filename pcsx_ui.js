@@ -167,6 +167,31 @@ var browser_gamepad_active = false;
 var gamepad_start_since = 0;
 var gamepad_exit_latched = false;
 var xbox_browser = /xbox/i.test(((navigator.userAgentData && navigator.userAgentData.platform) || '') + ' ' + (navigator.userAgent || ''));
+var bios_state = 'unknown';
+
+function set_bios_status(state, message) {
+  bios_state = state;
+  var indicator = document.getElementById('bios-status');
+  if (indicator) {
+    indicator.dataset.state = state;
+    indicator.textContent = 'BIOS: ' + message;
+  }
+}
+
+function cloud_mixed_content_message() {
+  return 'Blocked: an HTTPS page cannot load an HTTP server. Use an HTTPS server URL.';
+}
+
+function cloud_is_mixed_content() {
+  if (window.location.protocol !== 'https:') return false;
+  try { return new URL(pcsx_cloud_origin()).protocol === 'http:'; }
+  catch (error) { return false; }
+}
+
+function cloud_error_message(error) {
+  if (cloud_is_mixed_content()) return cloud_mixed_content_message();
+  return error && error.message ? error.message : String(error);
+}
 
 function configure_touch_controls() {
   var platform = (navigator.userAgentData && navigator.userAgentData.platform) || '';
@@ -358,7 +383,7 @@ function var_setup() {
   cout_print("start worker")
   // Bump this when worker logic changes so browsers do not reuse an older
   // cached bundle while testing streaming or local-disc fixes.
-  pcsx_worker = new Worker("pcsx_worker.js?v=20261008-xbox-gamepad");
+  pcsx_worker = new Worker("pcsx_worker.js?v=20261009-bios-status");
   pcsx_worker.onmessage = pcsx_worker_onmessage;
   document.getElementById('iso_opener').disabled=false;
   var spinner = document.getElementById('spinner');
@@ -370,20 +395,22 @@ function var_setup() {
   update_state_controls();
 }
 
-function send_bios(bytes, status) {
+function send_bios(bytes, source, name) {
   if (!bytes || bytes.length !== 512 * 1024) {
+    set_bios_status('error', 'invalid file; BIOS must be exactly 512 KiB');
     Module.setStatus('BIOS must be exactly 512 KiB');
     return false;
   }
   var buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  pcsx_worker.postMessage({ cmd: 'loadbios', bios: buffer }, [buffer]);
-  if (status) Module.setStatus(status);
+  set_bios_status('loading', 'valid 512 KiB image received; saving…');
+  pcsx_worker.postMessage({ cmd: 'loadbios', bios: buffer, source: source || 'browser', name: name || 'bios.bin' }, [buffer]);
   return true;
 }
 
 function restore_bios() {
   var encoded = localStorage.getItem('pcsxjs-bios');
-  if (encoded) send_bios(base64_to_bytes(encoded), 'saved BIOS loaded');
+  if (encoded) send_bios(base64_to_bytes(encoded), 'saved browser BIOS', localStorage.getItem('pcsxjs-bios-name') || 'saved BIOS');
+  else set_bios_status('none', 'not loaded; upload or choose a server BIOS');
 }
 
 function pcsx_upload_bios(input) {
@@ -392,8 +419,9 @@ function pcsx_upload_bios(input) {
   var reader = new FileReader();
   reader.onload = function () {
     var bios = new Uint8Array(reader.result);
-    if (send_bios(bios, 'BIOS uploaded; start or reload a game to use it')) {
+    if (send_bios(bios, 'uploaded BIOS', file.name)) {
       localStorage.setItem('pcsxjs-bios', bytes_to_base64(bios));
+      localStorage.setItem('pcsxjs-bios-name', file.name);
     }
     input.value = '';
   };
@@ -570,6 +598,9 @@ function pcsx_worker_onmessage(event) {
         active_game_button = null;
       }
       break
+    case "bios_ready":
+      set_bios_status('ready', (data.name || 'BIOS') + ' loaded and ready; used on the next game start');
+      break
     case "setUI":
       var el = document.getElementById(data.key);
       if (!el) break;
@@ -696,7 +727,13 @@ function pcsx_cloud_server_save() {
     try {
       var candidate = value;
       if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) candidate = window.location.protocol + '//' + candidate;
-      new URL(candidate);
+      var parsed = new URL(candidate);
+      if (window.location.protocol === 'https:' && parsed.protocol === 'http:') {
+        set_bios_status('blocked', cloud_mixed_content_message());
+        Module.setStatus(cloud_mixed_content_message());
+        if (document.getElementById('cloud-status')) document.getElementById('cloud-status').textContent = cloud_mixed_content_message();
+        return;
+      }
       localStorage.setItem('pcsxjs-cloud-url', value);
     } catch (error) {
       Module.setStatus('invalid cloud server URL');
@@ -727,14 +764,22 @@ function pcsx_cloud_server_reset() {
 
 function pcsx_cloud_status() {
   var status = document.getElementById('cloud-status');
+  if (cloud_is_mixed_content()) {
+    var blocked = cloud_mixed_content_message();
+    if (status) status.textContent = blocked;
+    set_bios_status('blocked', blocked);
+    return;
+  }
   fetch(pcsx_cloud_url('/api/status')).then(function (response) {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     return response.json();
   }).then(function (result) {
-    status.textContent = 'Cloud connected' + (result.bios ? ' · BIOS available' : '') + (result.state ? ' · state available' : '') + (result.memorycard ? ' · memory card available' : '');
+    status.textContent = 'Cloud connected' + (result.bios ? ' · BIOS file available' : '') + (result.state ? ' · state available' : '') + (result.memorycard ? ' · memory card available' : '');
   }).catch(function (error) {
-    status.textContent = 'Unable to connect to cloud service';
-    cout_print('[cloud] ' + error.message);
+    var message = cloud_error_message(error);
+    status.textContent = message;
+    if (cloud_is_mixed_content()) set_bios_status('blocked', message);
+    cout_print('[cloud] ' + message);
   });
 }
 
@@ -810,8 +855,10 @@ function pcsx_load_game_catalog() {
     })
     .catch(function (error) {
       status.hidden = false;
-      status.textContent = 'Unable to load games: ' + error.message;
-      cout_print('[games] ' + error.message);
+      var message = cloud_error_message(error);
+      status.textContent = 'Unable to load games: ' + message;
+      if (cloud_is_mixed_content()) set_bios_status('blocked', message);
+      cout_print('[games] ' + message);
   });
 }
 
@@ -895,6 +942,12 @@ function pcsx_load_bios_catalog() {
   var list = document.getElementById('bios-list');
   var status = document.getElementById('bios-list-status');
   if (!list || !status) return;
+  if (cloud_is_mixed_content()) {
+    status.hidden = false;
+    status.textContent = cloud_mixed_content_message();
+    set_bios_status('blocked', cloud_mixed_content_message());
+    return;
+  }
   status.hidden = false;
   status.textContent = 'Loading BIOS files...';
   list.replaceChildren();
@@ -917,13 +970,21 @@ function pcsx_load_bios_catalog() {
     status.textContent = biosFiles.length ? '' : 'No 512 KiB BIOS files found';
     status.hidden = biosFiles.length > 0;
   }).catch(function (error) {
-    status.textContent = 'Unable to load BIOS files: ' + error.message;
-    cout_print('[bios] ' + error.message);
+    var message = cloud_error_message(error);
+    status.textContent = 'Unable to load BIOS files: ' + message;
+    if (cloud_is_mixed_content()) set_bios_status('blocked', message);
+    cout_print('[bios] ' + message);
   });
 }
 
 function pcsx_cloud_download_bios(name, button) {
   if (!name) return;
+  if (cloud_is_mixed_content()) {
+    set_bios_status('blocked', cloud_mixed_content_message());
+    Module.setStatus(cloud_mixed_content_message());
+    return;
+  }
+  set_bios_status('loading', 'downloading ' + name + '…');
   if (button) {
     button.disabled = true;
     button.textContent = 'Loading...';
@@ -933,12 +994,15 @@ function pcsx_cloud_download_bios(name, button) {
     return response.arrayBuffer();
   }).then(function (buffer) {
     var bios = new Uint8Array(buffer);
-    if (!send_bios(bios, 'cloud BIOS loaded; start or reload a game to use it')) {
+    if (!send_bios(bios, 'cloud BIOS', name)) {
       throw new Error('cloud BIOS is not 512 KiB');
     }
     localStorage.setItem('pcsxjs-bios', bytes_to_base64(bios));
+    localStorage.setItem('pcsxjs-bios-name', name);
   }).catch(function (error) {
-    Module.setStatus('cloud BIOS load failed: ' + error.message);
+    var message = cloud_error_message(error);
+    set_bios_status(cloud_is_mixed_content() ? 'blocked' : 'error', 'cloud load failed: ' + message);
+    Module.setStatus('cloud BIOS load failed: ' + message);
   }).then(function () {
     if (button) {
       button.disabled = false;

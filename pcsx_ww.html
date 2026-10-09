@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PCSX Web Emulator</title>
-  <link rel="stylesheet" type="text/css" href="pcsx.css?v=20261009-xbox-controls">
+  <link rel="stylesheet" type="text/css" href="pcsx.css?v=20261009-bios-status">
 </head>
 <body class="app-shell">
   <header class="app-header">
@@ -82,6 +82,7 @@
         <li><button class="app-button" type="button" data-feedback="Uploaded" onclick="pcsx_cloud_upload_memory_card()">Upload Memory Card</button></li>
         <li><button class="app-button" type="button" data-feedback="Downloaded" onclick="pcsx_cloud_download_memory_card()">Download Memory Card</button></li>
         <li class="menu-section">BIOS</li>
+        <li><p id="bios-status" class="bios-status" role="status" data-state="unknown">BIOS: checking…</p></li>
         <li id="bios-list-status" role="status">Loading BIOS files...</li>
         <li id="bios-list"></li>
       </ul>
@@ -132,7 +133,7 @@
     </div>
   </div>
 
-  <script type="text/javascript" src="pcsx_ui.js?v=20261009-xbox-sdl-capture"></script>
+  <script type="text/javascript" src="pcsx_ui.js?v=20261009-bios-status"></script>
   <script type="text/javascript" src="pcsx_ww.js?v=20261009-deferred-sdl"></script>
   <script type="text/javascript">
     (function () {
