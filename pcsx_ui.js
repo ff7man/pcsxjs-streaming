@@ -401,7 +401,7 @@ function var_setup() {
   cout_print("start worker")
   // Bump this when worker logic changes so browsers do not reuse an older
   // cached bundle while testing streaming or local-disc fixes.
-  pcsx_worker = new Worker("pcsx_worker.js?v=20261009-bios-status");
+  pcsx_worker = new Worker("pcsx_worker.js?v=20261009-cdda-fix-1");
   pcsx_worker.onmessage = pcsx_worker_onmessage;
   document.getElementById('iso_opener').disabled=false;
   var spinner = document.getElementById('spinner');
