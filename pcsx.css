@@ -266,6 +266,10 @@ body.app-shell { min-height: 100dvh; display: grid; grid-template-rows: auto min
 .app-header { display: flex; align-items: center; justify-content: flex-start; gap: .75rem; width: 100%; max-width: none; box-sizing: border-box; margin: .75rem 0; padding: 0 .75rem; }
 .app-header h1 { margin: 0; font-size: clamp(1rem, 3vw, 1.6rem); }
 .app-actions { display: flex; gap: .5rem; margin-left: auto; }
+.bios-status { box-sizing: border-box; width: 100%; padding: .35rem .75rem; border-top: 1px solid #333; border-bottom: 1px solid #333; background: #171717; color: #aaa; font-size: .9rem; }
+.bios-status[data-state="ready"] { color: #8ff0a4; }
+.bios-status[data-state="loading"] { color: #ffe08a; }
+.bios-status[data-state="error"], .bios-status[data-state="blocked"] { color: #ff9d9d; }
 .icon-button { width: 3.5rem; height: 3.5rem; border: 2px solid #666; border-radius: .55rem; background: #292929 center / 2rem 2rem no-repeat; color: transparent; cursor: pointer; }
 .icon-button:hover, .icon-button:focus-visible { background-color: #3a3a3a; }
 #menu-button { background-image: url('images/menu.svg'); }
