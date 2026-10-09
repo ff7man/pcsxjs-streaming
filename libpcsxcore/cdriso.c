@@ -106,6 +106,44 @@ EM_JS(int, psx_stream_read_sector, (int lba, int destination), {
 	}
 	return 0;
 });
+
+EM_JS(int, psx_stream_read_audio_sector, (int lba, int destination), {
+	const stream = Module.psxRangeStream;
+	if (!stream || !stream.url || lba < 0) return -1;
+
+	const byteOffset = lba * 2352;
+	const chunkIndex = Math.floor(byteOffset / stream.chunkSize);
+	const chunkStart = chunkIndex * stream.chunkSize;
+	const chunk = stream.chunks.get(chunkIndex);
+	if (chunk) {
+		const offset = byteOffset - chunkStart;
+		if (offset + 2352 > chunk.length) return -1;
+		HEAPU8.set(chunk.subarray(offset, offset + 2352), destination);
+		return 1;
+	}
+
+	if (stream.errors.has(chunkIndex)) return -1;
+	if (!stream.pending.has(chunkIndex)) {
+		const end = chunkStart + stream.chunkSize - 1;
+		const request = fetch(stream.url, {
+			headers: { Range: `bytes=${chunkStart}-${end}` }
+		}).then(async response => {
+			if (response.status !== 206) {
+				throw new Error(`stream request returned HTTP ${response.status}; byte ranges are required`);
+			}
+			const data = new Uint8Array(await response.arrayBuffer());
+			stream.chunks.set(chunkIndex, data);
+			while (stream.chunks.size > stream.maxChunks) {
+				stream.chunks.delete(stream.chunks.keys().next().value);
+			}
+		}).catch(error => {
+			stream.errors.set(chunkIndex, error);
+			if (Module.printErr) Module.printErr(`[CDR stream] ${error.message}`);
+		}).finally(() => stream.pending.delete(chunkIndex));
+		stream.pending.set(chunkIndex, request);
+	}
+	return 0;
+});
 #endif
 
 static unsigned char sndbuffer[CD_FRAMESIZE_RAW * 10];
@@ -207,7 +245,7 @@ static long GetTickCount(void) {
 #endif
 
 // this thread plays audio data
-#ifdef ____EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
 
 void playcdda()
 {
@@ -219,34 +257,32 @@ void playcdda()
 
 		t = GetTickCount() + CDDA_FRAMETIME;
 
-		if (subChanMixed) {
-			printf("subChanMixed\n");
-			s = 0;
-
-			for (i = 0; i < sizeof(sndbuffer) / CD_FRAMESIZE_RAW; i++) {
-				// read one sector
-				d = fread(sndbuffer + CD_FRAMESIZE_RAW * i, 1, CD_FRAMESIZE_RAW, cddaHandle);
-				if (d < CD_FRAMESIZE_RAW) {
-					break;
+		s = 0;
+		for (i = 0; i < sizeof(sndbuffer) / CD_FRAMESIZE_RAW; i++) {
+			int result = psx_stream_read_audio_sector(
+				cddaCurOffset / CD_FRAMESIZE_RAW,
+				(int)(uintptr_t)(sndbuffer + s));
+			if (result <= 0) {
+				if (result < 0) {
+					playing = FALSE;
 				}
-
-				s += d;
-
-				// skip the subchannel data
-				fseek(cddaHandle, SUB_FRAMESIZE, SEEK_CUR);
+				break;
 			}
-		}
-		else {
-			s = fread(sndbuffer, 1, sizeof(sndbuffer), cddaHandle);
-			printf("read s %ld\n",s);
+			s += CD_FRAMESIZE_RAW;
+			cddaCurOffset += CD_FRAMESIZE_RAW;
 		}
 
 		if (s == 0) {
+			if (playing) {
+				EM_ASM_( {setTimeout("_playcdda()", 10);});
+				return;
+			}
 			playing = FALSE;
-			fclose(cddaHandle);
+			if (cddaHandle != NULL && cddaHandle != (FILE *)1) {
+				fclose(cddaHandle);
+			}
 			cddaHandle = NULL;
 			initial_offset = 0;
-			printf("end playcdda\n");
 			return;
 		}
 
@@ -262,9 +298,6 @@ void playcdda()
 			SPU_playCDDAchannel((short *)sndbuffer, s);
 		}
 
-		cddaCurOffset += s;
-
-
 		d = t - (long)GetTickCount();
 		if (d <= 0) {
 			d = 1;
@@ -274,7 +307,6 @@ void playcdda()
 		}
 
 		if(playing){
-			printf("playcdda %ld\n", d);
 			EM_ASM_( {setTimeout("_playcdda()", $0);}, d);
 		}
 
@@ -289,10 +321,10 @@ static void stopCDDA() {
 
 	playing = FALSE;
 
-	if (cddaHandle != NULL) {
+	if (cddaHandle != NULL && cddaHandle != (FILE *)1) {
 		fclose(cddaHandle);
-		cddaHandle = NULL;
 	}
+	cddaHandle = NULL;
 
 	initial_offset = 0;
 
@@ -308,14 +340,12 @@ static void startCDDA(unsigned int offset) {
 		stopCDDA();
 	}
 
-	cddaHandle = fopen(GetIsoFile(), "rb");
-	if (cddaHandle == NULL) {
-		return;
-	}
+	/* Streamed discs have no local file handle. The sentinel preserves the
+	 * existing lifecycle while playcdda reads sectors through HTTP ranges. */
+	cddaHandle = (FILE *)1;
 
 	initial_offset = offset;
 	cddaCurOffset = initial_offset;
-	fseek(cddaHandle, initial_offset, SEEK_SET);
 
 	playing = TRUE;
 	playcdda();
